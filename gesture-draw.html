@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GestureDraw — Paint with Your Hands</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@300;700;900&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #2a2a3a;
+    --accent: #7c3aed;
+    --accent2: #06b6d4;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --glow: rgba(124,58,237,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  header h1 {
+    font-family: 'Unbounded', sans-serif;
+    font-weight: 900;
+    font-size: 1.1rem;
+    background: linear-gradient(135deg, #7c3aed, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em;
+    flex-shrink: 0;
+  }
+
+  .gesture-hint {
+    font-size: 0.62rem;
+    color: var(--muted);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-dot.active { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 72px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 6px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    z-index: 5;
+  }
+
+  .sidebar-label {
+    font-size: 0.5rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 6px;
+  }
+
+  .tool-btn {
+    width: 52px; height: 52px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    transition: all 0.15s;
+    color: var(--muted);
+    font-size: 0.45rem;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tool-btn svg { width: 20px; height: 20px; }
+  .tool-btn:hover { border-color: var(--accent); color: var(--text); background: rgba(124,58,237,0.1); }
+  .tool-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(124,58,237,0.15); box-shadow: 0 0 12px var(--glow); }
+
+  .divider {
+    width: 40px;
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
+  .color-swatch {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2.5px solid transparent;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .color-swatch:hover { transform: scale(1.15); }
+  .color-swatch.selected { border-color: white; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+
+  .custom-color-wrap {
+    position: relative;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px dashed var(--muted);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .custom-color-wrap input[type=color] {
+    position: absolute; opacity: 0; width: 200%; height: 200%; cursor: pointer;
+  }
+  .custom-color-wrap span { font-size: 16px; pointer-events: none; }
+
+  .size-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 28px;
+    height: 80px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    margin: 4px 0;
+  }
+
+  /* Canvas area */
+  .canvas-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #drawCanvas {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: none;
+  }
+
+  #videoEl {
+    position: absolute; top: 8px; right: 8px;
+    width: 180px; height: 135px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    object-fit: cover;
+    transform: scaleX(-1);
+    opacity: 0.85;
+    z-index: 2;
+  }
+
+  #overlayCanvas {
+    position: absolute; top: 8px; right: 8px;
+    width: 180px; height: 135px;
+    border-radius: 12px;
+    z-index: 3;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+
+  .gesture-badge {
+    position: absolute;
+    top: 152px; right: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.6rem;
+    color: var(--accent2);
+    z-index: 4;
+    letter-spacing: 0.05em;
+    min-width: 100px;
+    text-align: center;
+  }
+
+  .cursor-ring {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    transform: translate(-50%, -50%);
+    transition: width 0.1s, height 0.1s;
+  }
+
+  .instructions {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(18,18,26,0.9);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 0.58rem;
+    color: var(--muted);
+    z-index: 5;
+    display: flex;
+    gap: 20px;
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+  }
+  .instructions span { color: var(--text); }
+
+  .loading-overlay {
+    position: absolute; inset: 0;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    gap: 16px;
+  }
+  .loading-overlay h2 {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.2rem;
+    background: linear-gradient(135deg, #7c3aed, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .loading-overlay p { font-size: 0.7rem; color: var(--muted); }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .clear-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.5rem;
+    padding: 6px 4px;
+    border-radius: 8px;
+    border: 1.5px solid #ef4444;
+    background: transparent;
+    color: #ef4444;
+    cursor: pointer;
+    width: 52px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .clear-btn:hover { background: rgba(239,68,68,0.15); }
+
+  .undo-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.5rem;
+    padding: 6px 4px;
+    border-radius: 8px;
+    border: 1.5px solid var(--muted);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    width: 52px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .undo-btn:hover { border-color: var(--text); color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✦ GestureDraw</h1>
+  <div class="gesture-hint" id="headerHint">Loading MediaPipe hand tracking...</div>
+  <div class="status-dot" id="statusDot"></div>
+</header>
+
+<div class="main">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-label">Tools</div>
+
+    <button class="tool-btn active" id="btn-freehand" onclick="setTool('freehand')" title="Freehand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17c3-3 6-6 6-9a3 3 0 0 1 6 0c0 3-3 6-6 9"/><path d="M9 17c3 2 6 3 9 1"/></svg>
+      Free
+    </button>
+
+    <button class="tool-btn" id="btn-line" onclick="setTool('line')" title="Line">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/></svg>
+      Line
+    </button>
+
+    <button class="tool-btn" id="btn-circle" onclick="setTool('circle')" title="Circle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
+      Circle
+    </button>
+
+    <button class="tool-btn" id="btn-rectangle" onclick="setTool('rectangle')" title="Rectangle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="2"/></svg>
+      Rect
+    </button>
+
+    <button class="tool-btn" id="btn-triangle" onclick="setTool('triangle')" title="Triangle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,4 20,20 4,20"/></svg>
+      Tri
+    </button>
+
+    <button class="tool-btn" id="btn-arrow" onclick="setTool('arrow')" title="Arrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="10,5 19,5 19,14"/></svg>
+      Arrow
+    </button>
+
+    <button class="tool-btn" id="btn-star" onclick="setTool('star')" title="Star">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+      Star
+    </button>
+
+    <button class="tool-btn" id="btn-eraser" onclick="setTool('eraser')" title="Eraser">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l10-10 7 7-3 3"/><line x1="6" y1="14" x2="14" y2="6"/></svg>
+      Erase
+    </button>
+
+    <div class="divider"></div>
+    <div class="sidebar-label">Size</div>
+
+    <input type="range" class="size-slider" id="sizeSlider" min="2" max="40" value="5" oninput="updateSize(this.value)">
+
+    <div class="divider"></div>
+    <div class="sidebar-label">Color</div>
+
+    <div class="color-swatch selected" style="background:#ffffff" onclick="setColor('#ffffff', this)"></div>
+    <div class="color-swatch" style="background:#f87171" onclick="setColor('#f87171', this)"></div>
+    <div class="color-swatch" style="background:#fb923c" onclick="setColor('#fb923c', this)"></div>
+    <div class="color-swatch" style="background:#facc15" onclick="setColor('#facc15', this)"></div>
+    <div class="color-swatch" style="background:#4ade80" onclick="setColor('#4ade80', this)"></div>
+    <div class="color-swatch" style="background:#22d3ee" onclick="setColor('#22d3ee', this)"></div>
+    <div class="color-swatch" style="background:#818cf8" onclick="setColor('#818cf8', this)"></div>
+    <div class="color-swatch" style="background:#e879f9" onclick="setColor('#e879f9', this)"></div>
+    <div class="color-swatch" style="background:#f43f5e" onclick="setColor('#f43f5e', this)"></div>
+
+    <div class="custom-color-wrap" title="Custom color">
+      <input type="color" id="customColor" value="#7c3aed" oninput="setColor(this.value, null)">
+      <span>+</span>
+    </div>
+
+    <div class="divider"></div>
+    <button class="undo-btn" onclick="undo()">↩ Undo</button>
+    <button class="clear-btn" onclick="clearCanvas()">Clear</button>
+  </div>
+
+  <!-- Canvas Area -->
+  <div class="canvas-area">
+    <canvas id="drawCanvas"></canvas>
+    <video id="videoEl" autoplay muted playsinline></video>
+    <canvas id="overlayCanvas"></canvas>
+    <div class="gesture-badge" id="gestureBadge">✦ Detecting...</div>
+
+    <div class="instructions">
+      <div>☝️ <span>1 finger</span> = Draw</div>
+      <div>✌️ <span>2 fingers</span> = Move cursor</div>
+      <div>✊ <span>Fist</span> = Stop drawing</div>
+      <div>🤙 <span>Pinch</span> = Confirm shape</div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <h2>GestureDraw</h2>
+      <p>Loading MediaPipe Hand Tracking...</p>
+      <p id="loadStatus">Initializing...</p>
+    </div>
+  </div>
+</div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let currentTool = 'freehand';
+let currentColor = '#ffffff';
+let currentSize = 5;
+let isDrawing = false;
+let startX, startY, lastX, lastY;
+let undoStack = [];
+let freehandPath = [];
+
+// Canvas refs
+const drawCanvas = document.getElementById('drawCanvas');
+const ctx = drawCanvas.getContext('2d');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const octx = overlayCanvas.getContext('2d');
+const videoEl = document.getElementById('videoEl');
+
+// Cursor state
+let cursorX = -100, cursorY = -100;
+
+// Gesture smoothing
+let smoothX = 0, smoothY = 0;
+const SMOOTH = 0.35;
+
+// ─── Resize canvas ────────────────────────────────────────────────────────────
+function resizeCanvases() {
+  const area = drawCanvas.parentElement;
+  const w = area.clientWidth, h = area.clientHeight;
+  // Preserve drawing
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  tmp.getContext('2d').drawImage(drawCanvas, 0, 0);
+  drawCanvas.width = w; drawCanvas.height = h;
+  ctx.drawImage(tmp, 0, 0);
+}
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+
+// ─── Tool & Color helpers ─────────────────────────────────────────────────────
+function setTool(t) {
+  currentTool = t;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + t);
+  if (btn) btn.classList.add('active');
+  isDrawing = false;
+}
+
+function setColor(c, el) {
+  currentColor = c;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+  if (el) el.classList.add('selected');
+}
+
+function updateSize(v) { currentSize = parseInt(v); }
+
+function clearCanvas() {
+  saveUndo();
+  ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+}
+
+function saveUndo() {
+  if (undoStack.length > 20) undoStack.shift();
+  undoStack.push(ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height));
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  ctx.putImageData(undoStack.pop(), 0, 0);
+}
+
+// ─── Shape drawers ────────────────────────────────────────────────────────────
+function drawShape(tool, x1, y1, x2, y2, commit = false) {
+  if (!commit) {
+    // Preview on a temp overlay
+    ctx.save();
+  }
+  ctx.strokeStyle = currentColor;
+  ctx.lineWidth = currentSize;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const dx = x2 - x1, dy = y2 - y1;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+
+  ctx.beginPath();
+  switch (tool) {
+    case 'line':
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      break;
+    case 'circle': {
+      const r = dist / 2;
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      break;
+    }
+    case 'rectangle':
+      ctx.rect(x1, y1, dx, dy);
+      break;
+    case 'triangle': {
+      ctx.moveTo((x1 + x2) / 2, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineTo(x1, y2);
+      ctx.closePath();
+      break;
+    }
+    case 'arrow': {
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      const angle = Math.atan2(dy, dx);
+      const hs = Math.min(20, dist * 0.4);
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - hs * Math.cos(angle - 0.4), y2 - hs * Math.sin(angle - 0.4));
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - hs * Math.cos(angle + 0.4), y2 - hs * Math.sin(angle + 0.4));
+      break;
+    }
+    case 'star': {
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      const outerR = dist / 2, innerR = outerR * 0.4;
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? outerR : innerR;
+        const a = (Math.PI / 5) * i - Math.PI / 2;
+        if (i === 0) ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+        else ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+      }
+      ctx.closePath();
+      break;
+    }
+  }
+  ctx.stroke();
+  if (!commit) ctx.restore();
+}
+
+// ─── MediaPipe Hand tracking ──────────────────────────────────────────────────
+let savedImageData = null;
+let previewActive = false;
+
+function getIndexFingerTip(landmarks) {
+  // landmark 8 = index finger tip
+  return landmarks[8];
+}
+
+function countExtendedFingers(lm) {
+  // Tips: 4 (thumb), 8 (index), 12 (middle), 16 (ring), 20 (pinky)
+  // MCP joints: 2, 5, 9, 13, 17
+  let count = 0;
+  const tips = [8, 12, 16, 20];
+  const pips = [6, 10, 14, 18];
+  for (let i = 0; i < 4; i++) {
+    if (lm[tips[i]].y < lm[pips[i]].y) count++;
+  }
+  // Thumb: compare x
+  if (lm[4].x < lm[3].x) count++;
+  return count;
+}
+
+function isPinch(lm) {
+  const dx = lm[8].x - lm[4].x;
+  const dy = lm[8].y - lm[4].y;
+  return Math.sqrt(dx*dx + dy*dy) < 0.05;
+}
+
+function onResults(results) {
+  const W = drawCanvas.width, H = drawCanvas.height;
+
+  // Draw landmarks on overlay
+  octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    document.getElementById('gestureBadge').textContent = '✦ No hand detected';
+    // Confirm shape if was drawing
+    if (isDrawing && previewActive && currentTool !== 'freehand' && currentTool !== 'eraser') {
+      drawShape(currentTool, startX, startY, lastX, lastY, true);
+      isDrawing = false;
+      previewActive = false;
+    } else if (isDrawing && currentTool === 'freehand') {
+      isDrawing = false;
+    }
+    return;
+  }
+
+  const lm = results.multiHandLandmarks[0];
+  const fingers = countExtendedFingers(lm);
+  const pinch = isPinch(lm);
+
+  // Draw skeleton on overlay
+  drawConnectors(octx, lm, HAND_CONNECTIONS, { color: 'rgba(124,58,237,0.7)', lineWidth: 1.5 });
+  drawLandmarks(octx, lm, { color: '#06b6d4', lineWidth: 1, radius: 3 });
+
+  // Index fingertip position mapped to canvas
+  const tip = lm[8];
+  const rawX = (1 - tip.x) * W;  // mirrored
+  const rawY = tip.y * H;
+  smoothX += (rawX - smoothX) * SMOOTH;
+  smoothY += (rawY - smoothY) * SMOOTH;
+  cursorX = smoothX; cursorY = smoothY;
+
+  // ── Gesture logic ──
+  let gesture = '';
+
+  if (pinch) {
+    gesture = '🤙 Pinch — Confirm';
+    if (isDrawing && previewActive && currentTool !== 'freehand' && currentTool !== 'eraser') {
+      // commit
+      if (savedImageData) ctx.putImageData(savedImageData, 0, 0);
+      drawShape(currentTool, startX, startY, cursorX, cursorY, true);
+      saveUndo();
+      isDrawing = false;
+      previewActive = false;
+      savedImageData = null;
+    }
+  } else if (fingers === 0) {
+    gesture = '✊ Fist — Idle';
+    if (isDrawing && currentTool === 'freehand') {
+      saveUndo();
+      isDrawing = false;
+    }
+    if (isDrawing && previewActive) {
+      // cancel preview, restore
+      if (savedImageData) ctx.putImageData(savedImageData, 0, 0);
+      isDrawing = false;
+      previewActive = false;
+      savedImageData = null;
+    }
+  } else if (fingers === 1) {
+    gesture = '☝️ Drawing!';
+    if (currentTool === 'freehand') {
+      if (!isDrawing) {
+        saveUndo();
+        isDrawing = true;
+        lastX = cursorX; lastY = cursorY;
+      }
+      // Draw stroke
+      if (isDrawing) {
+        ctx.beginPath();
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = currentSize;
+        ctx.lineCap = 'round';
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(cursorX, cursorY);
+        ctx.stroke();
+        lastX = cursorX; lastY = cursorY;
+      }
+    } else if (currentTool === 'eraser') {
+      if (!isDrawing) { saveUndo(); isDrawing = true; }
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(cursorX, cursorY, currentSize * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Shape tool — start
+      if (!isDrawing) {
+        savedImageData = ctx.getImageData(0, 0, W, H);
+        startX = cursorX; startY = cursorY;
+        isDrawing = true;
+        previewActive = true;
+      } else {
+        // Preview
+        ctx.putImageData(savedImageData, 0, 0);
+        drawShape(currentTool, startX, startY, cursorX, cursorY, false);
+        lastX = cursorX; lastY = cursorY;
+      }
+    }
+  } else if (fingers === 2) {
+    gesture = '✌️ Hover';
+    if (isDrawing && currentTool === 'freehand') {
+      saveUndo(); isDrawing = false;
+    }
+  } else if (fingers >= 3) {
+    gesture = `✋ ${fingers} fingers`;
+    if (isDrawing && currentTool === 'freehand') {
+      saveUndo(); isDrawing = false;
+    }
+    if (isDrawing && previewActive) {
+      if (savedImageData) ctx.putImageData(savedImageData, 0, 0);
+      isDrawing = false; previewActive = false; savedImageData = null;
+    }
+  }
+
+  document.getElementById('gestureBadge').textContent = gesture || '✦ Tracking';
+
+  // Draw cursor ring on draw canvas
+  drawCursor(cursorX, cursorY);
+}
+
+function drawCursor(x, y) {
+  // Draw a floating cursor on a temp canvas layer
+  // We'll use a separate approach — draw on the overlay canvas but at canvas coords
+  octx.save();
+  octx.strokeStyle = currentTool === 'eraser' ? 'rgba(255,100,100,0.8)' : currentColor;
+  octx.lineWidth = 2;
+  octx.setLineDash([4, 3]);
+  octx.beginPath();
+  const r = currentTool === 'eraser' ? currentSize * 2 : Math.max(10, currentSize * 1.5);
+  // Map canvas coords to overlay coords
+  const ox = (1 - x / drawCanvas.width) * overlayCanvas.width;
+  const oy = (y / drawCanvas.height) * overlayCanvas.height;
+  octx.arc(ox, oy, r * (overlayCanvas.width / drawCanvas.width), 0, Math.PI * 2);
+  octx.stroke();
+  octx.restore();
+}
+
+// ─── Init MediaPipe ───────────────────────────────────────────────────────────
+async function initMediaPipe() {
+  const loadStatus = document.getElementById('loadStatus');
+
+  try {
+    loadStatus.textContent = 'Accessing camera...';
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    videoEl.srcObject = stream;
+    await new Promise(r => videoEl.onloadedmetadata = r);
+    videoEl.play();
+
+    loadStatus.textContent = 'Loading hand model...';
+
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
+    });
+    hands.onResults(onResults);
+
+    loadStatus.textContent = 'Starting camera feed...';
+
+    const camera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({ image: videoEl }); },
+      width: 640, height: 480
+    });
+    await camera.start();
+
+    // Hide loading, show app
+    document.getElementById('loadingOverlay').style.display = 'none';
+    document.getElementById('statusDot').classList.add('active');
+    document.getElementById('headerHint').textContent =
+      '☝️ 1 finger = Draw  |  ✌️ 2 fingers = Hover  |  ✊ Fist = Stop  |  🤙 Pinch = Confirm shape';
+
+  } catch (err) {
+    loadStatus.textContent = '❌ ' + err.message;
+    console.error(err);
+    document.getElementById('loadingOverlay').querySelector('p').textContent =
+      'Camera access denied or MediaPipe failed to load. Please allow camera permissions.';
+  }
+}
+
+// Resize overlay to match video element
+function resizeOverlay() {
+  overlayCanvas.width = videoEl.clientWidth || 180;
+  overlayCanvas.height = videoEl.clientHeight || 135;
+}
+window.addEventListener('resize', resizeOverlay);
+overlayCanvas.width = 180; overlayCanvas.height = 135;
+
+// Start
+initMediaPipe();
+</script>
+</body>
+</html>
